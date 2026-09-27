@@ -1,0 +1,259 @@
+---
+// src/components/LeftSidebar.astro
+---
+
+<aside class="sidebar-left glass-panel">
+  <!-- Mode Selector -->
+  <div>
+    <div class="sidebar-heading">
+      <span>Nivel de Escala Analítica</span>
+      <span style="color: var(--accent-cyan);">Agnóstico</span>
+    </div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: var(--bg-secondary); padding: 4px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); margin-bottom: 8px;">
+      <button id="scale-macro-btn" class="mode-tab active active-zero" style="font-size: 0.76rem;">
+        🏢 Macroestructura
+      </button>
+      <button id="scale-micro-btn" class="mode-tab" style="font-size: 0.76rem;">
+        🔬 Microestructura
+      </button>
+    </div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: var(--bg-secondary); padding: 4px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
+      <button id="scale-zeroshot-btn" class="mode-tab" style="font-size: 0.76rem;">
+        ⚡ Zero-Shot Clicks
+      </button>
+      <button id="scale-textprompt-btn" class="mode-tab" style="font-size: 0.76rem;">
+        💬 Texto → Segmentar
+      </button>
+    </div>
+  </div>
+
+  <!-- Run Universal Extraction Button -->
+  <div>
+    <button id="run-universal-btn" class="btn btn-primary" style="width: 100%; justify-content: center; background: linear-gradient(135deg, #06b6d4, #6366f1); box-shadow: 0 4px 16px rgba(6, 182, 212, 0.35); padding: 10px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+        <polyline points="2 17 12 22 22 17"></polyline>
+        <polyline points="2 12 12 17 22 12"></polyline>
+      </svg>
+      <span id="run-universal-text" style="font-weight: 700;">Analizar Píxeles Reales</span>
+    </button>
+    <div style="font-size: 0.68rem; color: var(--text-muted); text-align: center; margin-top: 6px;">
+      Calcula métricas matemáticas reales sobre los píxeles de la imagen
+    </div>
+  </div>
+
+  <!-- PANEL A: MACROSTRUCTURE CONTROLS -->
+  <div id="panel-macro-controls" style="display: flex; flex-direction: column; gap: 14px;">
+    <div class="sidebar-heading">
+      <span>Capas Macroestructurales Reales</span>
+      <span style="font-size: 0.7rem; color: var(--accent-cyan); font-family: var(--font-mono);">Polígonos</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <label style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-surface); padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); cursor: pointer; font-size: 0.76rem;">
+        <span style="display: flex; align-items: center; gap: 8px;">
+          <input type="checkbox" id="chk-macro-units" checked style="accent-color: #8b5cf6;" />
+          <span style="width: 10px; height: 10px; border-radius: 2px; background: #8b5cf6;"></span>
+          <span style="font-weight: 600;">Túbulos / Cuerpos Tisulares</span>
+        </span>
+        <span id="badge-macro-units-count" style="font-family: var(--font-mono); color: var(--accent-cyan);">Calculando...</span>
+      </label>
+
+      <label style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-surface); padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); cursor: pointer; font-size: 0.76rem;">
+        <span style="display: flex; align-items: center; gap: 8px;">
+          <input type="checkbox" id="chk-macro-lumens" checked style="accent-color: #f59e0b;" />
+          <span style="width: 10px; height: 10px; border-radius: 2px; background: #f59e0b;"></span>
+          <span style="font-weight: 600;">Luces Tubulares (Lumens)</span>
+        </span>
+        <span id="badge-macro-lumens-count" style="font-family: var(--font-mono); color: var(--accent-amber);">Calculando...</span>
+      </label>
+
+      <label style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-surface); padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); cursor: pointer; font-size: 0.76rem;">
+        <span style="display: flex; align-items: center; gap: 8px;">
+          <input type="checkbox" id="chk-semantic-mask" checked style="accent-color: #06b6d4;" />
+          <span style="width: 10px; height: 10px; border-radius: 2px; background: #06b6d4;"></span>
+          <span style="font-weight: 600;">Máscara Semántica Completa</span>
+        </span>
+        <span style="font-family: var(--font-mono); color: var(--accent-emerald);">Píxeles</span>
+      </label>
+    </div>
+  </div>
+
+  <!-- PANEL B: MICROSTRUCTURE CONTROLS -->
+  <div id="panel-micro-controls" style="display: none; flex-direction: column; gap: 14px;">
+    <div class="sidebar-heading">
+      <span>Microestructura: Núcleos Reales</span>
+      <span style="font-size: 0.7rem; color: #38bdf8; font-family: var(--font-mono);">Hematoxilina</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <label style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-surface); padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); cursor: pointer; font-size: 0.76rem;">
+        <span style="display: flex; align-items: center; gap: 8px;">
+          <input type="checkbox" id="chk-micro-nuclei" checked style="accent-color: #8b5cf6;" />
+          <span style="width: 10px; height: 10px; border-radius: 50%; background: #8b5cf6;"></span>
+          <span style="font-weight: 600;">Instancias Nucleares</span>
+        </span>
+        <span id="badge-micro-count" style="font-family: var(--font-mono); color: #38bdf8; font-weight: 600;">Calculando...</span>
+      </label>
+    </div>
+  </div>
+
+  <!-- PANEL C: ZERO-SHOT INTERACTIVE (CLICKS) -->
+  <div id="panel-zeroshot-controls" style="display: none; flex-direction: column; gap: 14px;">
+    <div class="sidebar-heading">
+      <span>Segmentación Interactiva Real</span>
+      <span style="font-size: 0.7rem; color: var(--accent-cyan); font-family: var(--font-mono);">Click en Imagen</span>
+    </div>
+
+    <p style="font-size: 0.72rem; color: var(--text-secondary); line-height: 1.4;">
+      Haz click sobre cualquier núcleo, luz o túbulo en la imagen para calcular su contorno exacto:
+    </p>
+
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <button id="tool-prompt-pos" class="btn btn-secondary active-tool" style="justify-content: flex-start;">
+        <span style="width: 9px; height: 9px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px #10b981;"></span>
+        <span style="font-weight: 600;">Prompt de Inclusión (+)</span>
+        <span style="margin-left: auto; font-size: 0.68rem; color: var(--text-muted); font-family: var(--font-mono);">Click Izq</span>
+      </button>
+
+      <button id="tool-prompt-neg" class="btn btn-secondary" style="justify-content: flex-start;">
+        <span style="width: 9px; height: 9px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 6px #ef4444;"></span>
+        <span style="font-weight: 600;">Prompt de Exclusión (-)</span>
+        <span style="margin-left: auto; font-size: 0.68rem; color: var(--text-muted); font-family: var(--font-mono);">Shift + Click</span>
+      </button>
+    </div>
+
+    <div style="background: var(--bg-surface); padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); font-size: 0.72rem;">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+        <span style="color: var(--text-muted);">Puntos activos:</span>
+        <span id="active-prompts-count" style="font-family: var(--font-mono); color: var(--accent-cyan); font-weight: 600;">0 pts</span>
+      </div>
+      <div style="display: flex; gap: 6px;">
+        <button id="clear-prompts-btn" class="btn btn-secondary" style="flex: 1; padding: 4px 8px; font-size: 0.72rem;">Limpiar</button>
+        <button id="save-annotation-btn" class="btn btn-primary" style="flex: 1; padding: 4px 8px; font-size: 0.72rem;">Guardar Capa</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL D: TEXT PROMPT SEGMENTATION (BiomedCLIP) -->
+  <div id="panel-textprompt-controls" style="display: none; flex-direction: column; gap: 14px;">
+    <div class="sidebar-heading">
+      <span>Segmentación por Texto (BiomedCLIP)</span>
+      <span style="font-size: 0.7rem; color: #a78bfa; font-family: var(--font-mono);">AI</span>
+    </div>
+
+    <p style="font-size: 0.72rem; color: var(--text-secondary); line-height: 1.4;">
+      Escribí qué estructura querés segmentar. El modelo analiza la imagen y genera la máscara automáticamente.
+    </p>
+
+    <!-- Text Input -->
+    <div style="position: relative;">
+      <input
+        type="text"
+        id="text-prompt-input"
+        placeholder="Ej: membrana basal, núcleos, estroma..."
+        style="width: 100%; padding: 10px 42px 10px 14px; background: var(--bg-surface); border: 1px solid var(--border-medium); border-radius: var(--radius-md); color: var(--text-primary); font-size: 0.84rem; font-family: var(--font-sans); outline: none; transition: border-color 0.2s;"
+      />
+      <button id="run-text-segment-btn" style="position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 32px; height: 32px; border-radius: var(--radius-sm); background: linear-gradient(135deg, #8b5cf6, #06b6d4); border: none; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;" title="Segmentar">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+          <polyline points="12 5 19 12 12 19"></polyline>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Suggested Prompts Chips -->
+    <div>
+      <div style="font-size: 0.68rem; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">Estructuras Universales (Cualquier Tejido):</div>
+      <div id="prompt-chips" style="display: flex; flex-wrap: wrap; gap: 4px;">
+        <button class="prompt-chip" data-prompt="membrana basal">membrana basal</button>
+        <button class="prompt-chip" data-prompt="núcleos celulares">núcleos</button>
+        <button class="prompt-chip" data-prompt="luz tubular">luz tubular / lumen</button>
+        <button class="prompt-chip" data-prompt="epitelio">epitelio</button>
+        <button class="prompt-chip" data-prompt="estroma">estroma</button>
+        <button class="prompt-chip" data-prompt="vasos sanguíneos">vasos sanguíneos</button>
+        <button class="prompt-chip" data-prompt="glomérulo">glomérulo (riñón)</button>
+        <button class="prompt-chip" data-prompt="criptas">criptas (colon)</button>
+        <button class="prompt-chip" data-prompt="alveolos">alveolos (pulmón)</button>
+        <button class="prompt-chip" data-prompt="células de Leydig">cél. Leydig</button>
+        <button class="prompt-chip" data-prompt="colágeno">colágeno</button>
+      </div>
+    </div>
+
+    <!-- Tissue-Agnostic Settings Accordion -->
+    <div style="background: rgba(139, 92, 246, 0.06); border: 1px solid rgba(139, 92, 246, 0.25); border-radius: var(--radius-sm); padding: 10px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="font-size: 0.7rem; font-weight: 700; color: #c4b5fd; display: flex; align-items: center; justify-content: space-between;">
+        <span>PIPELINE AGNÓSTICO (MONAI)</span>
+        <span style="font-size: 0.62rem; background: rgba(139, 92, 246, 0.25); padding: 2px 6px; border-radius: 4px;">Universal</span>
+      </div>
+
+      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.72rem; color: var(--text-secondary);">
+        <input type="checkbox" id="chk-macenko-norm" checked style="accent-color: #8b5cf6;" />
+        <span><strong>Normalización Macenko</strong> (H&E estándar)</span>
+      </label>
+
+      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.72rem; color: var(--text-secondary);">
+        <input type="checkbox" id="chk-tissue-masking" checked style="accent-color: #8b5cf6;" />
+        <span><strong>Tissue Masking</strong> (Ignorar fondo de vidrio)</span>
+      </label>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: var(--text-secondary);">
+        <span>Mezcla Gaussiana (MONAI):</span>
+        <span style="font-family: var(--font-mono); color: #a78bfa; font-weight: 600;">50% Overlap</span>
+      </div>
+    </div>
+
+    <!-- Sensitivity Slider -->
+    <div style="background: var(--bg-surface); padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+      <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 4px;">
+        <span>Sensibilidad</span>
+        <span id="text-sensitivity-val" style="font-family: var(--font-mono); color: var(--text-primary); font-weight: 600;">50%</span>
+      </div>
+      <input type="range" id="text-sensitivity-slider" min="10" max="90" value="50" style="width: 100%; accent-color: #a78bfa;" />
+      <div style="display: flex; justify-content: space-between; font-size: 0.62rem; color: var(--text-muted); margin-top: 2px;">
+        <span>Estricto</span>
+        <span>Amplio</span>
+      </div>
+    </div>
+
+    <!-- Display Mode Toggles -->
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <label style="display: flex; align-items: center; gap: 8px; background: var(--bg-surface); padding: 7px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); cursor: pointer; font-size: 0.74rem;">
+        <input type="checkbox" id="chk-text-heatmap" checked style="accent-color: #f59e0b;" />
+        <span style="width: 10px; height: 10px; border-radius: 2px; background: linear-gradient(135deg, #3b82f6, #f59e0b, #ef4444);"></span>
+        <span style="font-weight: 600;">Heatmap de Activación</span>
+      </label>
+      <label style="display: flex; align-items: center; gap: 8px; background: var(--bg-surface); padding: 7px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); cursor: pointer; font-size: 0.74rem;">
+        <input type="checkbox" id="chk-text-mask" checked style="accent-color: #06b6d4;" />
+        <span style="width: 10px; height: 10px; border-radius: 2px; background: #06b6d4;"></span>
+        <span style="font-weight: 600;">Máscara de Segmentación</span>
+      </label>
+      <label style="display: flex; align-items: center; gap: 8px; background: var(--bg-surface); padding: 7px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); cursor: pointer; font-size: 0.74rem;">
+        <input type="checkbox" id="chk-text-polygons" checked style="accent-color: #a78bfa;" />
+        <span style="width: 10px; height: 10px; border-radius: 2px; background: #a78bfa;"></span>
+        <span style="font-weight: 600;">Contornos (Polígonos)</span>
+      </label>
+    </div>
+
+    <!-- Status / Last prompt info -->
+    <div id="text-prompt-status" style="background: var(--bg-surface); padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); font-size: 0.72rem; display: none;">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+        <span style="color: var(--text-muted);">Prompt enviado:</span>
+        <span id="text-prompt-sent" style="color: #a78bfa; font-weight: 600;"></span>
+      </div>
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: var(--text-muted);">Traducción CLIP:</span>
+        <span id="text-prompt-translated" style="color: var(--accent-cyan); font-family: var(--font-mono); font-size: 0.68rem;"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Opacity Slider -->
+  <div style="background: var(--bg-surface); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); margin-top: auto;">
+    <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 4px;">
+      <span>Opacidad de Superposición</span>
+      <span id="global-opacity-val" style="font-family: var(--font-mono); color: var(--text-primary); font-weight: 600;">55%</span>
+    </div>
+    <input type="range" id="global-opacity-slider" min="0" max="100" value="55" style="width: 100%; accent-color: var(--accent-cyan);" />
+  </div>
+</aside>

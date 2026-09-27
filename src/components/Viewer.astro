@@ -1,0 +1,1093 @@
+---
+// src/components/Viewer.astro
+---
+
+<div class="viewport-container" id="viewport-container">
+  <!-- Main interactive canvas wrapper -->
+  <div class="canvas-wrapper" id="canvas-wrapper">
+    <canvas id="tissue-canvas"></canvas>
+  </div>
+
+  <!-- Floating Viewport Toolbar -->
+  <div class="viewport-floating-toolbar glass-panel">
+    <button id="zoom-in-btn" class="btn-icon" title="Aumentar Zoom (Zoom In)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        <line x1="11" y1="8" x2="11" y2="14"></line>
+        <line x1="8" y1="11" x2="14" y2="11"></line>
+      </svg>
+    </button>
+    <button id="zoom-out-btn" class="btn-icon" title="Reducir Zoom (Zoom Out)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        <line x1="8" y1="11" x2="14" y2="11"></line>
+      </svg>
+    </button>
+    <button id="zoom-reset-btn" class="btn-icon" title="Ajustar al Visor (Reset View)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+      </svg>
+    </button>
+    <div style="width: 1px; height: 18px; background: var(--border-medium); margin: 0 4px;"></div>
+    <button id="toggle-grid-btn" class="btn-icon" title="Alternar Cuadrícula Micrométrica">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+        <line x1="3" y1="9" x2="21" y2="9"></line>
+        <line x1="3" y1="15" x2="21" y2="15"></line>
+        <line x1="9" y1="3" x2="9" y2="21"></line>
+        <line x1="15" y1="3" x2="15" y2="21"></line>
+      </svg>
+    </button>
+    <button id="toggle-compare-btn" class="btn-icon" title="Comparar H&E Crudo vs Máscara AI">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="12" y1="2" x2="12" y2="22"></line>
+        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+      </svg>
+    </button>
+    <div style="font-family: var(--font-mono); font-size: 0.76rem; color: var(--accent-cyan); padding: 0 6px; font-weight: 600;" id="zoom-indicator">
+      1.0x (20.0x)
+    </div>
+  </div>
+
+  <!-- Scale Bar in Microns -->
+  <div class="scale-bar-overlay glass-panel">
+    <div id="scale-bar-label" style="font-family: var(--font-mono); font-size: 0.72rem; color: #fff; font-weight: 600;">
+      62.06 µm
+    </div>
+    <div class="scale-bar-line" id="scale-bar-line" style="width: 124px;"></div>
+  </div>
+
+  <!-- Coordinates & Cursor Inspector -->
+  <div class="coords-overlay glass-panel">
+    <span id="coords-text">X: 0, Y: 0 px | Calibración: 0.5 µm/px</span>
+  </div>
+
+  <!-- Scanning / Computing overlay banner -->
+  <div id="computing-overlay" style="display: none; position: absolute; inset: 0; background: rgba(7, 9, 14, 0.65); backdrop-filter: blur(4px); z-index: 40; align-items: center; justify-content: center; flex-direction: column; gap: 14px;">
+    <div style="width: 48px; height: 48px; border: 3px solid rgba(6, 182, 212, 0.2); border-top-color: #06b6d4; border-radius: 50%; animation: spin-loader 0.8s linear infinite;"></div>
+    <div id="computing-text" style="font-size: 0.88rem; font-weight: 600; color: #fff; font-family: var(--font-sans);">
+      Analizando píxeles reales de la imagen...
+    </div>
+  </div>
+</div>
+
+<style>
+  @keyframes spin-loader {
+    to { transform: rotate(360deg); }
+  }
+</style>
+
+<script>
+  import type { PromptPoint, ZeroShotAnnotation, TextPromptResult } from '../types/pathology';
+
+  // State
+  let currentSampleId = 'testis_real';
+  let customImageBase64: string | null = null;
+  let viewMode: 'macro' | 'micro' | 'zeroshot' | 'text-prompt' = 'macro';
+  let currentTool: 'prompt-pos' | 'prompt-neg' = 'prompt-pos';
+
+  // Canvas
+  const container = document.getElementById('viewport-container') as HTMLDivElement;
+  const canvas = document.getElementById('tissue-canvas') as HTMLCanvasElement;
+  const ctx = canvas.getContext('2d')!;
+
+  // Transforms
+  let scale = 1.0;
+  let panX = 0;
+  let panY = 0;
+  let isDragging = false;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  let showGrid = false;
+  let compareSplit = false;
+
+  // Images
+  let tissueImg = new Image();
+  let imgLoaded = false;
+  let semanticMaskImg = new Image();
+  let maskLoaded = false;
+
+  // Real analysis data from backend
+  let analysisResult: any = null;
+  let globalOpacity = 0.55;
+
+  // Layer Toggles
+  let showMacroUnits = true;
+  let showMacroLumens = true;
+  let showSemanticMask = true;
+  let showMicroNuclei = true;
+
+  // Zero-Shot
+  let activePrompts: PromptPoint[] = [];
+  let currentZeroShotPolygon: [number, number][] | null = null;
+  let currentZeroShotMetrics = { pixelArea: 0, physicalAreaUm2: 0, confidence: 0 };
+  let savedAnnotations: ZeroShotAnnotation[] = [];
+
+  // Text Prompt Segmentation State
+  let textPromptResult: TextPromptResult | null = null;
+  let textHeatmapImg = new Image();
+  let textHeatmapLoaded = false;
+  let textMaskImg = new Image();
+  let textMaskLoaded = false;
+  let showTextHeatmap = true;
+  let showTextMask = true;
+  let showTextPolygons = true;
+
+  function resizeCanvas() {
+    canvas.width = container.clientWidth;
+    canvas.height = container.clientHeight;
+    render();
+  }
+  window.addEventListener('resize', resizeCanvas);
+
+  function loadSample(sampleId: string) {
+    currentSampleId = sampleId;
+    customImageBase64 = null;
+    activePrompts = [];
+    currentZeroShotPolygon = null;
+
+    tissueImg = new Image();
+    tissueImg.src = `/samples/${sampleId}.jpg`;
+    tissueImg.onload = () => {
+      imgLoaded = true;
+      resetView();
+      runRealAnalysis();
+    };
+  }
+
+  // Handle Custom User Image Upload (ANY REAL TISSUE)
+  const fileInput = document.getElementById('custom-image-file') as HTMLInputElement;
+  fileInput?.addEventListener('change', (e) => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      customImageBase64 = event.target?.result as string;
+      currentSampleId = 'custom';
+      activePrompts = [];
+      currentZeroShotPolygon = null;
+
+      tissueImg = new Image();
+      tissueImg.src = customImageBase64;
+      tissueImg.onload = () => {
+        imgLoaded = true;
+        resetView();
+        const resEl = document.getElementById('img-res');
+        if (resEl) resEl.textContent = `${tissueImg.width}x${tissueImg.height} px`;
+        const titleEl = document.getElementById('tissue-title');
+        if (titleEl) titleEl.textContent = file.name;
+        runRealAnalysis();
+      };
+    };
+    reader.readAsDataURL(file);
+  });
+
+  async function runRealAnalysis() {
+    const compOverlay = document.getElementById('computing-overlay');
+    if (compOverlay) compOverlay.style.display = 'flex';
+
+    try {
+      const payload: any = {};
+      if (customImageBase64) {
+        payload.image_base64 = customImageBase64;
+      } else {
+        payload.sample_id = currentSampleId;
+      }
+
+      const res = await fetch('http://localhost:8000/api/infer/universal-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        analysisResult = await res.json();
+        updateUIWithRealAnalysis(analysisResult);
+
+        // Load real semantic mask image
+        if (analysisResult.semantic_mask_png) {
+          semanticMaskImg = new Image();
+          semanticMaskImg.src = analysisResult.semantic_mask_png;
+          semanticMaskImg.onload = () => {
+            maskLoaded = true;
+            render();
+          };
+        }
+      }
+    } catch (e) {
+      console.error('Error running real analysis:', e);
+    } finally {
+      if (compOverlay) compOverlay.style.display = 'none';
+      render();
+    }
+  }
+
+  function updateUIWithRealAnalysis(data: any) {
+    // Macro metrics
+    const macroList = document.getElementById('macro-metrics-list');
+    const badgeUnits = document.getElementById('badge-macro-units-count');
+    const badgeLumens = document.getElementById('badge-macro-lumens-count');
+
+    if (badgeUnits) badgeUnits.textContent = `${data.macrostructure.total_units_count} unidades`;
+    if (badgeLumens) badgeLumens.textContent = `${data.macrostructure.total_lumens_count} luces`;
+
+    if (macroList && data.macrostructure.metrics) {
+      macroList.innerHTML = Object.entries(data.macrostructure.metrics).map(([k, v]) => `
+        <div style="display: flex; justify-content: space-between;">
+          <span style="color: var(--text-muted);">${k.replace(/_/g, ' ')}:</span>
+          <span style="color: var(--accent-cyan); font-family: var(--font-mono); font-weight: 600;">${v}</span>
+        </div>
+      `).join('');
+    }
+
+    // Micro metrics
+    const totalCountEl = document.getElementById('micro-total-count');
+    const densityValEl = document.getElementById('micro-density-val');
+    const badgeMicro = document.getElementById('badge-micro-count');
+    const classesBars = document.getElementById('classes-percentage-bars');
+
+    const totalNuclei = data.microstructure.total_nuclei_detected;
+    if (totalCountEl) totalCountEl.textContent = totalNuclei.toLocaleString();
+    if (densityValEl) densityValEl.textContent = `${data.microstructure.cellular_density_mm2.toLocaleString()} cel/mm²`;
+    if (badgeMicro) badgeMicro.textContent = `${totalNuclei.toLocaleString()} células`;
+
+    if (classesBars && data.classes) {
+      classesBars.innerHTML = data.classes.map((cls: any) => `
+        <div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.70rem; margin-bottom: 2px;">
+            <span style="color: var(--text-secondary);">${cls.name}</span>
+            <span style="font-family: var(--font-mono); color: ${cls.color}; font-weight: 600;">${cls.percentage}% (${cls.area_mm2} mm²)</span>
+          </div>
+          <div style="width: 100%; height: 5px; background: var(--bg-card); border-radius: 999px; overflow: hidden;">
+            <div style="width: ${cls.percentage}%; height: 100%; background: ${cls.color}; border-radius: 999px;"></div>
+          </div>
+        </div>
+      `).join('');
+    }
+  }
+
+  function resetView() {
+    if (!imgLoaded) return;
+    const padding = 40;
+    const availableW = canvas.width - padding * 2;
+    const availableH = canvas.height - padding * 2;
+    scale = Math.min(availableW / tissueImg.width, availableH / tissueImg.height);
+    panX = (canvas.width - tissueImg.width * scale) / 2;
+    panY = (canvas.height - tissueImg.height * scale) / 2;
+    updateZoomIndicator();
+    updateScaleBar();
+  }
+
+  function updateZoomIndicator() {
+    const indicator = document.getElementById('zoom-indicator');
+    if (indicator) indicator.textContent = `${scale.toFixed(2)}x (Óptico: ${(20 * scale).toFixed(1)}x)`;
+  }
+
+  function updateScaleBar() {
+    const lineEl = document.getElementById('scale-bar-line');
+    const labelEl = document.getElementById('scale-bar-label');
+    if (lineEl && labelEl) {
+      const umPerPixel = 0.5 / scale;
+      const barPx = 62.06 / umPerPixel;
+      lineEl.style.width = `${Math.round(barPx)}px`;
+      labelEl.textContent = `62.06 µm`;
+    }
+  }
+
+  function screenToImage(screenX: number, screenY: number): [number, number] {
+    return [(screenX - panX) / scale, (screenY - panY) / scale];
+  }
+
+  // RENDER PIPELINE
+  function render() {
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!imgLoaded) return;
+
+    ctx.save();
+    ctx.translate(panX, panY);
+    ctx.scale(scale, scale);
+
+    // 1. Draw base histological image
+    ctx.drawImage(tissueImg, 0, 0);
+
+    // 2. Draw Real Semantic Mask PNG Overlay if active
+    if (maskLoaded && showSemanticMask && (viewMode === 'macro' || viewMode === 'micro') && !compareSplit) {
+      ctx.save();
+      ctx.globalAlpha = globalOpacity;
+      ctx.drawImage(semanticMaskImg, 0, 0);
+      ctx.restore();
+    }
+
+    // 2b. Draw Text Prompt Heatmap Overlay
+    if (viewMode === 'text-prompt' && textHeatmapLoaded && showTextHeatmap && !compareSplit) {
+      ctx.save();
+      ctx.globalAlpha = globalOpacity * 0.85;
+      ctx.drawImage(textHeatmapImg, 0, 0);
+      ctx.restore();
+    }
+
+    // 2c. Draw Text Prompt Mask Overlay
+    if (viewMode === 'text-prompt' && textMaskLoaded && showTextMask && !compareSplit) {
+      ctx.save();
+      ctx.globalAlpha = globalOpacity;
+      ctx.drawImage(textMaskImg, 0, 0);
+      ctx.restore();
+    }
+
+    // 3. Draw Real Macrostructural Polygons
+    if (analysisResult && viewMode === 'macro' && !compareSplit) {
+      // Draw detected tubule bodies
+      if (showMacroUnits && analysisResult.macrostructure.tissue_units) {
+        for (const u of analysisResult.macrostructure.tissue_units) {
+          if (u.polygon) drawPolygon(ctx, u.polygon, '#8B5CF6', 0.25, 3.0 / scale);
+        }
+      }
+      // Draw detected lumens
+      if (showMacroLumens && analysisResult.macrostructure.lumens) {
+        for (const lum of analysisResult.macrostructure.lumens) {
+          if (lum.polygon) drawPolygon(ctx, lum.polygon, '#F59E0B', 0.35, 2.5 / scale);
+        }
+      }
+    }
+
+    // 4. Draw Real Microstructural Nuclei Instances
+    if (analysisResult && viewMode === 'micro' && showMicroNuclei && !compareSplit) {
+      if (analysisResult.microstructure.sampled_nuclei_coords) {
+        ctx.save();
+        ctx.strokeStyle = '#38bdf8';
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.4)';
+        ctx.lineWidth = 1.5 / scale;
+        for (const [nx, ny, narea] of analysisResult.microstructure.sampled_nuclei_coords) {
+          const r = Math.max(2.5, Math.sqrt(narea) * 0.5) / scale;
+          ctx.beginPath();
+          ctx.arc(nx, ny, r, 0, 2 * Math.PI);
+          ctx.stroke();
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+    }
+
+    // 4b. Draw Text Prompt Polygons
+    if (viewMode === 'text-prompt' && textPromptResult && showTextPolygons && !compareSplit) {
+      if (Array.isArray(textPromptResult.polygons)) {
+        for (const item of textPromptResult.polygons) {
+          const pts = Array.isArray(item) ? item : (item as any).polygon;
+          if (pts && pts.length >= 3) {
+            drawPolygon(ctx, pts, '#a78bfa', 0.35, 2.5 / scale);
+          }
+        }
+      }
+    }
+
+    // 5. Draw Saved Zero-Shot Annotations
+    for (const ann of savedAnnotations) {
+      if (!ann.visible) continue;
+      drawPolygon(ctx, ann.polygon, ann.color, 0.45, 2.5 / scale);
+    }
+
+    // 6. Draw Active Zero-Shot Polygon
+    if (currentZeroShotPolygon && viewMode === 'zeroshot') {
+      drawPolygon(ctx, currentZeroShotPolygon, '#06b6d4', 0.55, 3.0 / scale);
+    }
+
+    // 7. Draw Prompt Points
+    if (viewMode === 'zeroshot') {
+      for (const pt of activePrompts) {
+        drawPromptPoint(ctx, pt);
+      }
+    }
+
+    // 8. Grid
+    if (showGrid) drawMicroGrid(ctx, tissueImg.width, tissueImg.height);
+
+    ctx.restore();
+  }
+
+  function drawPolygon(c: CanvasRenderingContext2D, poly: [number, number][], color: string, alpha: number, strokeWidth: number) {
+    if (!poly || poly.length < 3) return;
+    c.save();
+    c.beginPath();
+    c.moveTo(poly[0][0], poly[0][1]);
+    for (let i = 1; i < poly.length; i++) c.lineTo(poly[i][0], poly[i][1]);
+    c.closePath();
+
+    c.fillStyle = color;
+    c.globalAlpha = alpha;
+    c.fill();
+
+    c.globalAlpha = 1.0;
+    c.strokeStyle = color;
+    c.lineWidth = strokeWidth;
+    c.stroke();
+    c.restore();
+  }
+
+  function drawPromptPoint(c: CanvasRenderingContext2D, pt: PromptPoint) {
+    c.save();
+    const color = pt.label === 1 ? '#10b981' : '#ef4444';
+    const r = 6 / scale;
+    c.beginPath();
+    c.arc(pt.x, pt.y, r, 0, 2 * Math.PI);
+    c.fillStyle = color;
+    c.shadowColor = color;
+    c.shadowBlur = 6;
+    c.fill();
+
+    c.strokeStyle = '#ffffff';
+    c.lineWidth = 1.5 / scale;
+    c.beginPath();
+    c.moveTo(pt.x - r * 0.5, pt.y);
+    c.lineTo(pt.x + r * 0.5, pt.y);
+    if (pt.label === 1) {
+      c.moveTo(pt.x, pt.y - r * 0.5);
+      c.lineTo(pt.x, pt.y + r * 0.5);
+    }
+    c.stroke();
+    c.restore();
+  }
+
+  function drawMicroGrid(c: CanvasRenderingContext2D, w: number, h: number) {
+    c.save();
+    c.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    c.lineWidth = 1 / scale;
+    for (let x = 0; x <= w; x += 100) {
+      c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke();
+    }
+    for (let y = 0; y <= h; y += 100) {
+      c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke();
+    }
+    c.restore();
+  }
+
+  // Interactivity
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const newScale = Math.max(0.2, Math.min(8.0, scale * zoomFactor));
+    panX = mouseX - (mouseX - panX) * (newScale / scale);
+    panY = mouseY - (mouseY - panY) * (newScale / scale);
+    scale = newScale;
+
+    updateZoomIndicator();
+    updateScaleBar();
+    render();
+  }, { passive: false });
+
+  canvas.addEventListener('mousedown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    if (e.button === 1 || (e.shiftKey && viewMode !== 'zeroshot') || viewMode === 'text-prompt') {
+      isDragging = true;
+      dragStartX = mouseX - panX;
+      dragStartY = mouseY - panY;
+      canvas.style.cursor = 'grabbing';
+      return;
+    }
+
+    if (e.button === 0 && viewMode === 'zeroshot') {
+      const [imgX, imgY] = screenToImage(mouseX, mouseY);
+      if (imgX >= 0 && imgX <= tissueImg.width && imgY >= 0 && imgY <= tissueImg.height) {
+        const label = (e.shiftKey || currentTool === 'prompt-neg') ? 0 : 1;
+        activePrompts.push({ x: imgX, y: imgY, label });
+        updatePromptsUI();
+        executeRealZeroShotInference();
+        render();
+      }
+    }
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    if (isDragging) {
+      panX = mouseX - dragStartX;
+      panY = mouseY - dragStartY;
+      render();
+    }
+
+    const [imgX, imgY] = screenToImage(mouseX, mouseY);
+    const coordsEl = document.getElementById('coords-text');
+    if (coordsEl && imgX >= 0 && imgX <= tissueImg.width && imgY >= 0 && imgY <= tissueImg.height) {
+      coordsEl.textContent = `X: ${Math.round(imgX)}, Y: ${Math.round(imgY)} px | ${(imgX * 0.5).toFixed(1)}, ${(imgY * 0.5).toFixed(1)} µm`;
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (isDragging) {
+      isDragging = false;
+      canvas.style.cursor = viewMode === 'zeroshot' ? 'crosshair' : 'default';
+    }
+  });
+
+  // REAL Zero-Shot API Call on Actual Image Pixels
+  async function executeRealZeroShotInference() {
+    if (activePrompts.length === 0) {
+      currentZeroShotPolygon = null;
+      render();
+      return;
+    }
+
+    try {
+      const payload: any = {
+        sample_id: currentSampleId,
+        points: activePrompts
+      };
+      if (customImageBase64) {
+        payload.custom_image_base64 = customImageBase64;
+      }
+
+      const res = await fetch('http://localhost:8000/api/infer/zero-shot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        currentZeroShotPolygon = data.geometry.coordinates[0];
+        currentZeroShotMetrics = {
+          pixelArea: data.metrics.pixel_area,
+          physicalAreaUm2: data.metrics.physical_area_um2,
+          confidence: data.confidence_score
+        };
+        render();
+      }
+    } catch (e) {
+      console.error('Error running real zero-shot inference:', e);
+    }
+  }
+
+  function updatePromptsUI() {
+    const countEl = document.getElementById('active-prompts-count');
+    if (countEl) countEl.textContent = `${activePrompts.length} pts`;
+  }
+
+  // Switch Scale Views (Macro vs Micro vs Zero-Shot)
+  const btnMacro = document.getElementById('scale-macro-btn');
+  const btnMicro = document.getElementById('scale-micro-btn');
+  const btnZero = document.getElementById('scale-zeroshot-btn');
+
+  const panelMacro = document.getElementById('panel-macro-controls');
+  const panelMicro = document.getElementById('panel-micro-controls');
+  const panelZero = document.getElementById('panel-zeroshot-controls');
+
+  btnMacro?.addEventListener('click', () => {
+    viewMode = 'macro';
+    btnMacro.classList.add('active', 'active-zero');
+    btnMicro?.classList.remove('active', 'active-zero', 'active-textprompt');
+    btnZero?.classList.remove('active', 'active-zero', 'active-textprompt');
+    if (panelMacro) panelMacro.style.display = 'flex';
+    if (panelMicro) panelMicro.style.display = 'none';
+    if (panelZero) panelZero.style.display = 'none';
+    canvas.style.cursor = 'default';
+    render();
+  });
+
+  btnMicro?.addEventListener('click', () => {
+    viewMode = 'micro';
+    btnMicro.classList.add('active', 'active-zero');
+    btnMacro?.classList.remove('active', 'active-zero', 'active-textprompt');
+    btnZero?.classList.remove('active', 'active-zero', 'active-textprompt');
+    if (panelMicro) panelMicro.style.display = 'flex';
+    if (panelMacro) panelMacro.style.display = 'none';
+    if (panelZero) panelZero.style.display = 'none';
+    canvas.style.cursor = 'default';
+    render();
+  });
+
+  btnZero?.addEventListener('click', () => {
+    viewMode = 'zeroshot';
+    btnZero.classList.add('active', 'active-zero');
+    btnMacro?.classList.remove('active', 'active-zero', 'active-textprompt');
+    btnMicro?.classList.remove('active', 'active-zero', 'active-textprompt');
+    btnTextPrompt?.classList.remove('active', 'active-textprompt', 'active-zero');
+    if (panelZero) panelZero.style.display = 'flex';
+    if (panelMacro) panelMacro.style.display = 'none';
+    if (panelMicro) panelMicro.style.display = 'none';
+    if (panelTextPrompt) panelTextPrompt.style.display = 'none';
+    canvas.style.cursor = 'crosshair';
+    render();
+  });
+
+  // Text Prompt Tab & Controls
+  const btnTextPrompt = document.getElementById('scale-textprompt-btn');
+  const panelTextPrompt = document.getElementById('panel-textprompt-controls');
+
+  btnTextPrompt?.addEventListener('click', () => {
+    viewMode = 'text-prompt';
+    btnTextPrompt.classList.add('active', 'active-textprompt');
+    btnMacro?.classList.remove('active', 'active-zero', 'active-textprompt');
+    btnMicro?.classList.remove('active', 'active-zero', 'active-textprompt');
+    btnZero?.classList.remove('active', 'active-zero', 'active-textprompt');
+    if (panelTextPrompt) panelTextPrompt.style.display = 'flex';
+    if (panelMacro) panelMacro.style.display = 'none';
+    if (panelMicro) panelMicro.style.display = 'none';
+    if (panelZero) panelZero.style.display = 'none';
+    canvas.style.cursor = 'grab';
+    render();
+  });
+
+  // Also update existing tab click handlers to hide text-prompt panel
+  btnMacro?.addEventListener('click', () => {
+    if (panelTextPrompt) panelTextPrompt.style.display = 'none';
+    btnTextPrompt?.classList.remove('active', 'active-textprompt');
+  });
+  btnMicro?.addEventListener('click', () => {
+    if (panelTextPrompt) panelTextPrompt.style.display = 'none';
+    btnTextPrompt?.classList.remove('active', 'active-textprompt');
+  });
+
+  // ---- TEXT PROMPT SEGMENTATION ----
+  const textPromptInput = document.getElementById('text-prompt-input') as HTMLInputElement;
+  const runTextSegBtn = document.getElementById('run-text-segment-btn');
+  const sensitivitySlider = document.getElementById('text-sensitivity-slider') as HTMLInputElement;
+  const sensitivityVal = document.getElementById('text-sensitivity-val');
+
+  sensitivitySlider?.addEventListener('input', () => {
+    if (sensitivityVal) sensitivityVal.textContent = `${sensitivitySlider.value}%`;
+  });
+
+  // Prompt chips
+  document.querySelectorAll('.prompt-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const prompt = (chip as HTMLElement).dataset.prompt || '';
+      if (textPromptInput) textPromptInput.value = prompt;
+      // Highlight active chip
+      document.querySelectorAll('.prompt-chip').forEach(c => c.classList.remove('active-chip'));
+      chip.classList.add('active-chip');
+    });
+  });
+
+  // In-Memory Ephemeral Session ID
+  function getSessionId(): string {
+    let sid = sessionStorage.getItem('monai_session_id');
+    if (!sid) {
+      sid = 'sess_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now();
+      sessionStorage.setItem('monai_session_id', sid);
+    }
+    return sid;
+  }
+
+  // Complete In-Memory Ephemeral Session Reset
+  async function performFullResetSession() {
+    const sid = getSessionId();
+    try {
+      await fetch('http://localhost:8000/api/session/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sid })
+      });
+    } catch (e) {
+      console.warn('Backend reset call:', e);
+    }
+
+    // 1. Reset Text Prompt Segmentation
+    textPromptResult = null;
+    textHeatmapLoaded = false;
+    textMaskLoaded = false;
+    textHeatmapImg = new Image();
+    textMaskImg = new Image();
+
+    // 2. Reset Macro/Micro Precomputed Analysis
+    analysisResult = null;
+    maskLoaded = false;
+    semanticMaskImg = new Image();
+
+    // 3. Reset Zero-Shot Annotations
+    savedAnnotations = [];
+    currentZeroShotPolygon = null;
+    activePrompts = [];
+
+    // 4. Reset Inputs & Chips
+    if (textPromptInput) textPromptInput.value = '';
+    document.querySelectorAll('.prompt-chip').forEach(c => c.classList.remove('active-chip'));
+
+    // 5. Uncheck / Turn off overlay toggles
+    const chkSemantic = document.getElementById('chk-semantic-mask') as HTMLInputElement;
+    if (chkSemantic) chkSemantic.checked = false;
+    const chkMacroUnits = document.getElementById('chk-macro-units') as HTMLInputElement;
+    if (chkMacroUnits) chkMacroUnits.checked = false;
+    const chkMacroLumens = document.getElementById('chk-macro-lumens') as HTMLInputElement;
+    if (chkMacroLumens) chkMacroLumens.checked = false;
+    const chkMicroNuclei = document.getElementById('chk-micro-nuclei') as HTMLInputElement;
+    if (chkMicroNuclei) chkMicroNuclei.checked = false;
+
+    showSemanticMask = false;
+    showMacroUnits = false;
+    showMacroLumens = false;
+    showMicroNuclei = false;
+
+    // 6. Reset Left Sidebar Badges
+    const badgeUnits = document.getElementById('badge-macro-units-count');
+    if (badgeUnits) badgeUnits.textContent = '0 unidades';
+    const badgeLumens = document.getElementById('badge-macro-lumens-count');
+    if (badgeLumens) badgeLumens.textContent = '0 luces';
+    const badgeMicro = document.getElementById('badge-micro-count');
+    if (badgeMicro) badgeMicro.textContent = '0 células';
+    const activePromptsEl = document.getElementById('active-prompts-count');
+    if (activePromptsEl) activePromptsEl.textContent = '0 pts';
+
+    const statusEl = document.getElementById('text-prompt-status');
+    if (statusEl) statusEl.style.display = 'none';
+
+    // 7. Reset Right Sidebar Cards
+    const card = document.getElementById('text-prompt-results-card');
+    if (card) card.style.display = 'none';
+
+    const macroList = document.getElementById('macro-metrics-list');
+    if (macroList) macroList.innerHTML = `<div style="color: var(--text-muted); font-style: italic;">Sin capas activas (Lienzo limpio).</div>`;
+
+    const totalCountEl = document.getElementById('micro-total-count');
+    if (totalCountEl) totalCountEl.textContent = '---';
+    const densityValEl = document.getElementById('micro-density-val');
+    if (densityValEl) densityValEl.textContent = '---';
+    const classesBars = document.getElementById('classes-percentage-bars');
+    if (classesBars) classesBars.innerHTML = '';
+
+    renderSavedList();
+
+    // 8. Generate a new session ID for subsequent operations
+    const newSid = 'sess_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now();
+    sessionStorage.setItem('monai_session_id', newSid);
+
+    // 9. Re-render clean canvas
+    render();
+
+    // 10. User visual feedback overlay
+    const compOverlay = document.getElementById('computing-overlay');
+    const compText = document.getElementById('computing-text');
+    if (compOverlay && compText) {
+      compText.textContent = '✅ Sesión reiniciada (en memoria RAM). Todo limpio.';
+      compOverlay.style.display = 'flex';
+      setTimeout(() => { compOverlay.style.display = 'none'; }, 900);
+    }
+  }
+
+  // Connect both DOM click and window custom event
+  document.getElementById('reset-session-btn')?.addEventListener('click', performFullResetSession);
+  window.addEventListener('app:reset-session', performFullResetSession);
+
+  // Run segmentation
+  async function executeTextPromptSegmentation() {
+    const prompt = textPromptInput?.value?.trim();
+    if (!prompt) return;
+
+    const compOverlay = document.getElementById('computing-overlay');
+    const compText = document.getElementById('computing-text');
+    if (compOverlay) compOverlay.style.display = 'flex';
+    if (compText) compText.textContent = `Segmentando "${prompt}" (Pipeline Universal MONAI)...`;
+
+    try {
+      const sensitivity = sensitivitySlider ? parseInt(sensitivitySlider.value) / 100 : 0.5;
+      const normalizeStain = (document.getElementById('chk-macenko-norm') as HTMLInputElement)?.checked ?? true;
+      const tissueMasking = (document.getElementById('chk-tissue-masking') as HTMLInputElement)?.checked ?? true;
+
+      const payload: any = {
+        text_prompt: prompt,
+        sensitivity: sensitivity,
+        normalize_stain: normalizeStain,
+        tissue_masking: tissueMasking,
+        overlap: 0.5,
+        session_id: getSessionId()
+      };
+      if (customImageBase64) {
+        payload.image_base64 = customImageBase64;
+      } else {
+        payload.sample_id = currentSampleId;
+      }
+
+      const res = await fetch('http://localhost:8000/api/infer/text-prompt-segment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        textPromptResult = await res.json();
+        
+        // Load heatmap image
+        const heatmapSrc = textPromptResult!.heatmap_png_base64 || textPromptResult!.heatmap_png;
+        if (heatmapSrc) {
+          textHeatmapImg = new Image();
+          textHeatmapImg.src = heatmapSrc;
+          textHeatmapImg.onload = () => {
+            textHeatmapLoaded = true;
+            render();
+          };
+        }
+
+        // Load mask image
+        const maskSrc = textPromptResult!.mask_png_base64 || textPromptResult!.mask_png;
+        if (maskSrc) {
+          textMaskImg = new Image();
+          textMaskImg.src = maskSrc;
+          textMaskImg.onload = () => {
+            textMaskLoaded = true;
+            render();
+          };
+        }
+
+        updateTextPromptResultsUI(textPromptResult!);
+        render();
+      } else {
+        const err = await res.json();
+        console.error('Text prompt segmentation error:', err);
+      }
+    } catch (e) {
+      console.error('Error running text prompt segmentation:', e);
+    } finally {
+      if (compOverlay) compOverlay.style.display = 'none';
+    }
+  }
+
+  function updateTextPromptResultsUI(data: TextPromptResult) {
+    const promptOriginal = data.prompt || data.prompt_original || '';
+    const promptTranslated = data.translated_prompt || data.prompt_translated || '';
+
+    // Left sidebar status
+    const statusEl = document.getElementById('text-prompt-status');
+    const sentEl = document.getElementById('text-prompt-sent');
+    const translatedEl = document.getElementById('text-prompt-translated');
+    if (statusEl) statusEl.style.display = 'flex';
+    if (sentEl) sentEl.textContent = promptOriginal;
+    if (translatedEl) translatedEl.textContent = promptTranslated;
+
+    // Right sidebar results card
+    const card = document.getElementById('text-prompt-results-card');
+    if (card) card.style.display = 'flex';
+
+    const promptTextEl = document.getElementById('result-prompt-text');
+    const promptEnEl = document.getElementById('result-prompt-en');
+    const percentageEl = document.getElementById('result-percentage');
+    const regionsEl = document.getElementById('result-regions');
+    const areaEl = document.getElementById('result-area');
+    const pixelsEl = document.getElementById('result-pixels');
+    const confidenceEl = document.getElementById('result-confidence');
+
+    const pct = data.metrics?.coverage_pct ?? data.metrics?.percentage_of_image ?? 0;
+    const numRegions = data.metrics?.region_count ?? data.metrics?.num_regions ?? 0;
+    const areaUm2 = data.metrics?.area_um2 ?? 0;
+    const areaMm2 = data.metrics?.area_mm2 ?? (areaUm2 / 1_000_000);
+    const totalPx = data.metrics?.segmented_pixels ?? data.metrics?.total_segmented_px ?? 0;
+    const conf = data.metrics?.mean_confidence ?? 0;
+
+    if (promptTextEl) promptTextEl.textContent = promptOriginal;
+    if (promptEnEl) promptEnEl.textContent = promptTranslated;
+    if (percentageEl) percentageEl.textContent = `${pct}%`;
+    if (regionsEl) regionsEl.textContent = `${numRegions}`;
+    if (areaEl) {
+      if (areaMm2 >= 0.01) {
+        areaEl.textContent = `${areaMm2.toFixed(3)} mm²`;
+      } else {
+        areaEl.textContent = `${areaUm2.toLocaleString()} µm²`;
+      }
+    }
+    if (pixelsEl) pixelsEl.textContent = totalPx.toLocaleString();
+    if (confidenceEl) {
+      confidenceEl.textContent = `${(conf * 100).toFixed(1)}%`;
+      if (conf >= 0.7) {
+        confidenceEl.className = 'confidence-high';
+        confidenceEl.style.fontFamily = 'var(--font-mono)';
+        confidenceEl.style.fontWeight = '600';
+      } else if (conf >= 0.4) {
+        confidenceEl.className = 'confidence-medium';
+        confidenceEl.style.fontFamily = 'var(--font-mono)';
+        confidenceEl.style.fontWeight = '600';
+      } else {
+        confidenceEl.className = 'confidence-low';
+        confidenceEl.style.fontFamily = 'var(--font-mono)';
+        confidenceEl.style.fontWeight = '600';
+      }
+    }
+  }
+
+  // Event: run button click
+  runTextSegBtn?.addEventListener('click', () => {
+    executeTextPromptSegmentation();
+  });
+
+  // Event: Enter key in text input
+  textPromptInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      executeTextPromptSegmentation();
+    }
+  });
+
+  // Display mode toggles for text prompt
+  document.getElementById('chk-text-heatmap')?.addEventListener('change', (e) => {
+    showTextHeatmap = (e.target as HTMLInputElement).checked;
+    render();
+  });
+  document.getElementById('chk-text-mask')?.addEventListener('change', (e) => {
+    showTextMask = (e.target as HTMLInputElement).checked;
+    render();
+  });
+  document.getElementById('chk-text-polygons')?.addEventListener('change', (e) => {
+    showTextPolygons = (e.target as HTMLInputElement).checked;
+    render();
+  });
+
+  // Layer check listeners
+  document.getElementById('chk-macro-units')?.addEventListener('change', (e) => {
+    showMacroUnits = (e.target as HTMLInputElement).checked;
+    render();
+  });
+  document.getElementById('chk-macro-lumens')?.addEventListener('change', (e) => {
+    showMacroLumens = (e.target as HTMLInputElement).checked;
+    render();
+  });
+  document.getElementById('chk-semantic-mask')?.addEventListener('change', (e) => {
+    showSemanticMask = (e.target as HTMLInputElement).checked;
+    render();
+  });
+  document.getElementById('chk-micro-nuclei')?.addEventListener('change', (e) => {
+    showMicroNuclei = (e.target as HTMLInputElement).checked;
+    render();
+  });
+
+  // Re-run button
+  document.getElementById('run-universal-btn')?.addEventListener('click', () => {
+    runRealAnalysis();
+  });
+
+  // Opacity Slider
+  const opacitySlider = document.getElementById('global-opacity-slider') as HTMLInputElement;
+  const opacityVal = document.getElementById('global-opacity-val');
+  opacitySlider?.addEventListener('input', () => {
+    globalOpacity = parseInt(opacitySlider.value) / 100;
+    if (opacityVal) opacityVal.textContent = `${opacitySlider.value}%`;
+    render();
+  });
+
+  // Toolbar Actions
+  document.getElementById('zoom-in-btn')?.addEventListener('click', () => { scale = Math.min(8.0, scale * 1.25); updateZoomIndicator(); updateScaleBar(); render(); });
+  document.getElementById('zoom-out-btn')?.addEventListener('click', () => { scale = Math.max(0.2, scale * 0.8); updateZoomIndicator(); updateScaleBar(); render(); });
+  document.getElementById('zoom-reset-btn')?.addEventListener('click', () => { resetView(); render(); });
+  document.getElementById('toggle-grid-btn')?.addEventListener('click', () => { showGrid = !showGrid; render(); });
+  document.getElementById('toggle-compare-btn')?.addEventListener('click', () => { compareSplit = !compareSplit; render(); });
+
+  // Clear & Save Zero-Shot
+  document.getElementById('clear-prompts-btn')?.addEventListener('click', () => {
+    activePrompts = [];
+    currentZeroShotPolygon = null;
+    updatePromptsUI();
+    render();
+  });
+
+  document.getElementById('save-annotation-btn')?.addEventListener('click', () => {
+    if (!currentZeroShotPolygon) return;
+    savedAnnotations.push({
+      id: `ann-${Date.now()}`,
+      name: `Estructura Aislada #${savedAnnotations.length + 1}`,
+      polygon: currentZeroShotPolygon,
+      color: '#06b6d4',
+      areaUm2: currentZeroShotMetrics.physicalAreaUm2,
+      confidence: currentZeroShotMetrics.confidence,
+      timestamp: new Date().toLocaleTimeString(),
+      visible: true
+    });
+    activePrompts = [];
+    currentZeroShotPolygon = null;
+    updatePromptsUI();
+    renderSavedList();
+    render();
+  });
+
+  function renderSavedList() {
+    const list = document.getElementById('structures-list');
+    const countEl = document.getElementById('structures-count');
+    if (countEl) countEl.textContent = `${savedAnnotations.length}`;
+    if (!list) return;
+
+    if (!savedAnnotations.length) {
+      list.innerHTML = `<div style="font-size: 0.72rem; color: var(--text-muted); text-align: center; padding: 14px 8px; border: 1px dashed var(--border-subtle); border-radius: var(--radius-md);">Haz click en cualquier núcleo, luz o túbulo en la imagen para aislar su contorno real.</div>`;
+      return;
+    }
+
+    list.innerHTML = savedAnnotations.map((ann, idx) => `
+      <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 6px 8px; display: flex; align-items: center; justify-content: space-between; font-size: 0.72rem;">
+        <div>
+          <div style="font-weight: 600; color: #fff;">${ann.name}</div>
+          <div style="color: var(--accent-cyan); font-family: var(--font-mono); font-size: 0.65rem;">Área: ${ann.areaUm2.toLocaleString()} µm²</div>
+        </div>
+        <button class="del-btn btn-icon" data-idx="${idx}" style="color: #f87171; padding: 2px 6px;">✕</button>
+      </div>
+    `).join('');
+
+    list.querySelectorAll('.del-btn').forEach(b => {
+      b.addEventListener('click', (e) => {
+        const idx = parseInt((e.currentTarget as HTMLElement).dataset.idx || '0');
+        savedAnnotations.splice(idx, 1);
+        renderSavedList();
+        render();
+      });
+    });
+  }
+
+  // Export GeoJSON
+  document.getElementById('export-geojson-btn')?.addEventListener('click', () => {
+    const geojsonData = {
+      type: "FeatureCollection",
+      metadata: {
+        creator: "MONAI Pathology Real Pixel Engine",
+        sample_id: currentSampleId,
+        date: new Date().toISOString(),
+        total_nuclei_detected: analysisResult?.microstructure?.total_nuclei_detected || 0
+      },
+      features: [
+        ...(analysisResult?.macrostructure?.tissue_units || []).map((u: any) => ({
+          type: "Feature",
+          properties: { name: u.name, level: "Macroestructura", area_um2: u.area_um2 },
+          geometry: { type: "Polygon", coordinates: [u.polygon] }
+        })),
+        ...(analysisResult?.macrostructure?.lumens || []).map((lum: any) => ({
+          type: "Feature",
+          properties: { name: lum.name, level: "Luz Tubular", area_um2: lum.area_um2 },
+          geometry: { type: "Polygon", coordinates: [lum.polygon] }
+        })),
+        ...savedAnnotations.map(ann => ({
+          type: "Feature",
+          properties: { name: ann.name, level: "Zero-Shot Real", area_um2: ann.areaUm2 },
+          geometry: { type: "Polygon", coordinates: [ann.polygon] }
+        }))
+      ]
+    };
+    const blob = new Blob([JSON.stringify(geojsonData, null, 2)], { type: 'application/geo+json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `real_pathology_annotations.geojson`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // Tool Selection
+  document.getElementById('tool-prompt-pos')?.addEventListener('click', () => {
+    currentTool = 'prompt-pos';
+    document.getElementById('tool-prompt-pos')?.classList.add('active-tool');
+    document.getElementById('tool-prompt-neg')?.classList.remove('active-tool');
+  });
+  document.getElementById('tool-prompt-neg')?.addEventListener('click', () => {
+    currentTool = 'prompt-neg';
+    document.getElementById('tool-prompt-neg')?.classList.add('active-tool');
+    document.getElementById('tool-prompt-pos')?.classList.remove('active-tool');
+  });
+
+  // Init
+  resizeCanvas();
+  loadSample('testis_real');
+</script>

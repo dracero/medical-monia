@@ -1,0 +1,135 @@
+---
+// src/components/ArchitectureModal.astro
+---
+
+<div id="arch-modal" class="modal-backdrop">
+  <div class="modal-content glass-panel" style="background: #0e1526; border: 1px solid rgba(99, 102, 241, 0.35); box-shadow: 0 20px 50px rgba(0,0,0,0.8);">
+    <!-- Modal Header -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 14px;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <div style="width: 32px; height: 32px; border-radius: var(--radius-sm); background: linear-gradient(135deg, #06b6d4, #6366f1); display: flex; align-items: center; justify-content: center;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2">
+            <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+            <polyline points="2 17 12 22 22 17"></polyline>
+            <polyline points="2 12 12 17 22 12"></polyline>
+          </svg>
+        </div>
+        <div>
+          <h2 style="font-size: 1.15rem; font-weight: 700; color: #fff;">Arquitectura Full-Stack: MONAI + SAM-2 en Tejidos Sanos</h2>
+          <p style="font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-mono);">Histopatología Digital sin LLM • Astro + TypeScript + FastAPI</p>
+        </div>
+      </div>
+      <button id="close-arch-modal-btn" class="btn-icon" style="cursor: pointer;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Modal Body Content -->
+    <div style="display: flex; flex-direction: column; gap: 20px; font-size: 0.84rem; line-height: 1.6; color: var(--text-secondary);">
+      <!-- Question 1: Do we need an LLM? -->
+      <div style="background: rgba(6, 182, 212, 0.08); border: 1px solid rgba(6, 182, 212, 0.25); border-radius: var(--radius-md); padding: 16px;">
+        <div style="font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          ¿Se necesita un LLM (Large Language Model)?
+        </div>
+        <p>
+          <strong style="color: #fff;">Rotundamente NO.</strong> Tanto <strong>SAM-2 (Segment Anything)</strong> como <strong>MONAI (SwinUNETR / SegResNet)</strong> son <em>Vision Foundation Models</em> y redes neuronales convolucionales/transformers de visión pura.
+        </p>
+        <p style="margin-top: 6px;">
+          Operan sobre tensores de imagen bidimensionales y coordenadas cartesianas espaciales $(x, y)$ enviadas por tus clicks de ratón. Al prescindir de LLMs:
+        </p>
+        <ul style="margin-left: 20px; margin-top: 6px; display: flex; flex-direction: column; gap: 4px;">
+          <li>Tu GPU (RTX 3060 12GB) se dedica al 100% a la inferencia de visión en milisegundos (< 100ms por click).</li>
+          <li>Cero costes de APIs de modelos de lenguaje o llamadas externas.</li>
+          <li>Máxima privacidad médica y cumplimiento de normativas de datos clínicos locales.</li>
+        </ul>
+      </div>
+
+      <!-- Comparison: Zero-Shot vs Semantic in Healthy Tissues -->
+      <div>
+        <div style="font-weight: 700; color: #fff; margin-bottom: 10px;">
+          Diferencias Técnicas en Tejidos Sanos
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+          <div style="background: var(--bg-surface); padding: 14px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
+            <div style="font-weight: 700; color: var(--accent-cyan); margin-bottom: 4px;">⚡ Zero-Shot (SAM-2)</div>
+            <p style="font-size: 0.78rem;">
+              Segmenta cualquier estructura normal con un click sin haber sido entrenado para ese órgano específico.
+            </p>
+            <div style="margin-top: 8px; font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono);">
+              Ejemplos: Delimitar un glomérulo completo, aislar un folículo tiroideo individual o contornear la vena centrolobulillar.
+            </div>
+          </div>
+
+          <div style="background: var(--bg-surface); padding: 14px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
+            <div style="font-weight: 700; color: var(--accent-emerald); margin-bottom: 4px;">🔬 Semántica (MONAI)</div>
+            <p style="font-size: 0.78rem;">
+              Clasifica cada píxel de todo el corte histológico en los compartimentos biológicos normales predefinidos.
+            </p>
+            <div style="margin-top: 8px; font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono);">
+              Ejemplos: Clasificar simultáneamente cordones de hepatocitos vs sinusoides vs endotelio; o túbulos proximales vs distales.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Architecture Stack Flow -->
+      <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 16px;">
+        <div style="font-weight: 700; color: #fff; margin-bottom: 8px;">
+          Flujo de Datos y Tecnologías
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px; font-size: 0.78rem;">
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <span style="padding: 2px 8px; background: rgba(99, 102, 241, 0.2); border-radius: 4px; color: #a5b4fc; font-family: var(--font-mono); font-weight: 600;">Frontend</span>
+            <span><strong>Astro + TypeScript</strong> con Canvas de alta tasa de refresco (60fps pan/zoom) y motor de polígonos reactivo.</span>
+          </div>
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <span style="padding: 2px 8px; background: rgba(16, 185, 129, 0.2); border-radius: 4px; color: #6ee7b7; font-family: var(--font-mono); font-weight: 600;">Backend</span>
+            <span><strong>FastAPI + MONAI Core / MONAI Label</strong> con soporte para lectura WSI (<tt>monai.data.wsi</tt> cuCIM/OpenSlide).</span>
+          </div>
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <span style="padding: 2px 8px; background: rgba(245, 158, 11, 0.2); border-radius: 4px; color: #fcd34d; font-family: var(--font-mono); font-weight: 600;">Interoperabilidad</span>
+            <span>Exportación en <strong>GeoJSON estándar</strong> compatible directamente con <strong>QuPath</strong> y Digital Slide Archive (DSA).</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Footer -->
+    <div style="margin-top: 24px; display: flex; justify-content: flex-end;">
+      <button id="close-arch-modal-footer-btn" class="btn btn-primary" style="padding: 8px 20px;">
+        Entendido, volver al Visor
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const modal = document.getElementById('arch-modal');
+  const openBtn = document.getElementById('open-arch-modal-btn');
+  const closeBtn = document.getElementById('close-arch-modal-btn');
+  const closeFooterBtn = document.getElementById('close-arch-modal-footer-btn');
+
+  function openModal() {
+    if (modal) modal.classList.add('open');
+  }
+
+  function closeModal() {
+    if (modal) modal.classList.remove('open');
+  }
+
+  openBtn?.addEventListener('click', openModal);
+  closeBtn?.addEventListener('click', closeModal);
+  closeFooterBtn?.addEventListener('click', closeModal);
+
+  modal?.addEventListener('click', (e) => {
+    if (e.target === modal) closeModal();
+  });
+</script>

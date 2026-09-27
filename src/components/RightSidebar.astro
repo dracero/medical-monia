@@ -1,0 +1,124 @@
+---
+// src/components/RightSidebar.astro
+---
+
+<aside class="sidebar-right glass-panel">
+  <!-- Specimen / Image Card -->
+  <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 14px;">
+    <div class="sidebar-heading" style="margin-bottom: 8px;">
+      <span>Muestra Histológica</span>
+      <span id="specimen-badge" style="font-size: 0.65rem; color: #34d399; background: rgba(16, 185, 129, 0.15); padding: 2px 6px; border-radius: 4px; font-weight: 600;">DIGITAL PATHOLOGY</span>
+    </div>
+    <div id="tissue-title" style="font-weight: 700; font-size: 0.90rem; color: var(--text-primary); margin-bottom: 4px;">
+      Corte Histológico
+    </div>
+    <div id="tissue-organ" style="font-size: 0.74rem; color: var(--accent-cyan); font-weight: 500; margin-bottom: 8px;">
+      Microscopía Óptica (H&E)
+    </div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 0.68rem; font-family: var(--font-mono); color: var(--text-muted); background: var(--bg-card); padding: 8px; border-radius: var(--radius-sm);">
+      <div>Tinción: <span style="color: var(--text-primary);">H&E</span></div>
+      <div>Resolución: <span id="img-res" style="color: var(--text-primary);">1024x576 px</span></div>
+      <div>Calibración: <span style="color: var(--text-primary);">0.5 µm/px</span></div>
+      <div>Modo: <span style="color: #34d399;">Agnóstico</span></div>
+    </div>
+  </div>
+
+  <!-- MULTI-SCALE EXTRACTION DIAGNOSTICS CARD -->
+  <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 14px; display: flex; flex-direction: column; gap: 14px;">
+    <!-- 1. MACROSTRUCTURAL REPORT -->
+    <div>
+      <div class="sidebar-heading" style="margin-bottom: 6px;">
+        <span>1. Macroestructura (Morfología Real)</span>
+        <span style="font-size: 0.68rem; color: var(--accent-cyan); font-family: var(--font-mono);">Unidades</span>
+      </div>
+      <div id="macro-metrics-list" style="display: flex; flex-direction: column; gap: 5px; font-size: 0.72rem;">
+        <div style="color: var(--text-muted);">Calculando estructuras reales...</div>
+      </div>
+    </div>
+
+    <!-- 2. MICROSTRUCTURAL REPORT -->
+    <div style="border-top: 1px solid var(--border-subtle); padding-top: 10px;">
+      <div class="sidebar-heading" style="margin-bottom: 6px;">
+        <span>2. Microestructura Celular</span>
+        <span style="font-size: 0.68rem; color: #38bdf8; font-family: var(--font-mono);">Conteo Exacto</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
+        <span style="font-size: 0.72rem; color: var(--text-muted);">Núcleos detectados en la imagen:</span>
+        <span id="micro-total-count" style="font-size: 1rem; font-weight: 700; color: #38bdf8; font-family: var(--font-mono);">---</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; font-size: 0.70rem; color: var(--text-muted); margin-bottom: 8px;">
+        <span>Densidad celular calculada:</span>
+        <span id="micro-density-val" style="color: var(--text-primary); font-family: var(--font-mono); font-weight: 600;">---</span>
+      </div>
+
+      <!-- Real classes percentage distribution -->
+      <div class="sidebar-heading" style="margin-bottom: 4px; font-size: 0.68rem;">
+        <span>Distribución Semántica Real (% de Píxeles)</span>
+      </div>
+      <div id="classes-percentage-bars" style="display: flex; flex-direction: column; gap: 6px;">
+        <!-- Populated from real calculation -->
+      </div>
+    </div>
+  </div>
+
+  <!-- TEXT PROMPT SEGMENTATION RESULTS -->
+  <div id="text-prompt-results-card" style="background: var(--bg-surface); border: 1px solid rgba(167, 139, 250, 0.3); border-radius: var(--radius-md); padding: 14px; display: none; flex-direction: column; gap: 10px;">
+    <div class="sidebar-heading" style="margin-bottom: 0;">
+      <span>Resultado: Segmentación por Texto</span>
+      <span style="font-size: 0.65rem; color: #a78bfa; background: rgba(167, 139, 250, 0.15); padding: 2px 6px; border-radius: 4px; font-weight: 600;">BiomedCLIP</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 6px; font-size: 0.72rem;">
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: var(--text-muted);">Prompt:</span>
+        <span id="result-prompt-text" style="color: #a78bfa; font-weight: 600; max-width: 160px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
+      </div>
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: var(--text-muted);">Traducción CLIP:</span>
+        <span id="result-prompt-en" style="color: var(--accent-cyan); font-family: var(--font-mono); font-size: 0.66rem; max-width: 160px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
+      </div>
+    </div>
+
+    <div style="height: 1px; background: var(--border-subtle);"></div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+      <div style="background: var(--bg-card); padding: 8px; border-radius: var(--radius-sm); text-align: center;">
+        <div style="font-size: 1.05rem; font-weight: 700; color: #a78bfa; font-family: var(--font-mono);" id="result-percentage">--%</div>
+        <div style="font-size: 0.62rem; color: var(--text-muted);">de la imagen</div>
+      </div>
+      <div style="background: var(--bg-card); padding: 8px; border-radius: var(--radius-sm); text-align: center;">
+        <div style="font-size: 1.05rem; font-weight: 700; color: var(--accent-cyan); font-family: var(--font-mono);" id="result-regions">--</div>
+        <div style="font-size: 0.62rem; color: var(--text-muted);">regiones</div>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 4px; font-size: 0.70rem;">
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: var(--text-muted);">Área segmentada:</span>
+        <span id="result-area" style="color: var(--text-primary); font-family: var(--font-mono); font-weight: 600;">-- µm²</span>
+      </div>
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: var(--text-muted);">Píxeles segmentados:</span>
+        <span id="result-pixels" style="color: var(--text-primary); font-family: var(--font-mono); font-weight: 600;">--</span>
+      </div>
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: var(--text-muted);">Confianza media:</span>
+        <span id="result-confidence" style="font-family: var(--font-mono); font-weight: 600;">--</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ZERO-SHOT ISOLATED STRUCTURES -->
+  <div style="flex: 1; display: flex; flex-direction: column; min-height: 140px;">
+    <div class="sidebar-heading">
+      <span>Estructuras Aisladas (Zero-Shot)</span>
+      <span id="structures-count" style="font-size: 0.7rem; font-family: var(--font-mono); color: var(--accent-cyan);">0</span>
+    </div>
+
+    <div id="structures-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 2px;">
+      <div style="font-size: 0.72rem; color: var(--text-muted); text-align: center; padding: 14px 8px; border: 1px dashed var(--border-subtle); border-radius: var(--radius-md);">
+        Haz click en cualquier núcleo, luz o túbulo en la imagen para aislar su contorno real.
+      </div>
+    </div>
+  </div>
+</aside>

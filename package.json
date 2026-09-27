@@ -1,0 +1,22 @@
+{
+  "name": "medical-monai",
+  "type": "module",
+  "version": "0.0.1",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:astro": "astro dev",
+    "dev:backend": "uv run --with fastapi,uvicorn,pydantic,numpy,scipy,scikit-image,pillow,torch,open_clip_torch,monai,transformers,einops python -m uvicorn backend.app:app --port 8000",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "astro": "^7.3.5"
+  },
+  "allowScripts": {
+    "esbuild": true
+  }
+}
