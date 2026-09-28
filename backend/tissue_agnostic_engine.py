@@ -20,7 +20,7 @@ import numpy as np
 from PIL import Image
 import torch
 import torch.nn.functional as F
-from scipy.ndimage import gaussian_filter
+from scipy.ndimage import gaussian_filter, sobel
 from skimage.measure import find_contours, approximate_polygon, label, regionprops
 from skimage.morphology import opening, closing, disk, remove_small_objects
 
@@ -28,24 +28,25 @@ from skimage.morphology import opening, closing, disk, remove_small_objects
 from monai.inferers import sliding_window_inference
 from monai.networks.nets import SwinUNETR
 
-# Spanish -> English histological terms mapping
+# Spanish -> English histological terms mapping (Universal Tissue Agnostic)
 HISTO_TERMS_ES_EN: Dict[str, str] = {
     # Membranes & Barriers
     "membrana basal": "basement membrane basal lamina peritubular boundary",
-    "membrana": "basement membrane boundary",
-    "lamina basal": "basal lamina",
-    "lámina basal": "basal lamina",
+    "membrana": "basement membrane cell boundary",
+    "lamina basal": "basal lamina basement membrane",
+    "lámina basal": "basal lamina basement membrane",
     "membrana celular": "cell membrane plasma membrane",
     "lamina propia": "lamina propria connective tissue",
     "lámina propia": "lamina propria connective tissue",
 
-    # Tubules & Epithelium
-    "túbulos": "seminiferous tubules epithelial tubules",
-    "tubulos": "seminiferous tubules epithelial tubules",
-    "túbulo seminífero": "seminiferous tubule germinal epithelium",
-    "tubulo seminifero": "seminiferous tubule germinal epithelium",
-    "epitelio": "epithelium epithelial tissue",
-    "epitelio germinal": "germinal epithelium spermatogenic cells",
+    # Epithelium & Parenchyma
+    "epitelio": "epithelium epithelial layer glandular cells",
+    "túbulos": "tubules epithelial tubular structures",
+    "tubulos": "tubules epithelial tubular structures",
+    "túbulo": "tubule epithelial tubular structure",
+    "tubulo": "tubule epithelial tubular structure",
+    "conducto": "duct epithelial duct lining",
+    "acino": "acinus glandular acinar structure",
     "epitelio tubular": "tubular epithelium",
 
     # Lumens & Spaces
@@ -237,10 +238,10 @@ class PromptPredictorModule(torch.nn.Module):
     Receives image patch batches (B, 3, H, W) and outputs spatial semantic activation.
     """
 
-    def __init__(self, visual_model: torch.nn.Module, text_emb: torch.Tensor, device: torch.device):
+    def __init__(self, visual_model: torch.nn.Module, text_embs: torch.Tensor, device: torch.device):
         super().__init__()
         self.visual = visual_model
-        self.text_emb = text_emb
+        self.text_embs = text_embs  # (N_classes, Dim) where class 0 is target
         self.device = device
 
         # ImageNet / BiomedCLIP normalization constants
@@ -252,18 +253,21 @@ class PromptPredictorModule(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         x: (B, 3, H, W) in [0, 1] range.
-        Returns: (B, 1, H, W) contiguous activation map.
+        Returns: (B, 1, H, W) contiguous activation map representing target class probability.
         """
         x_norm = (x - self.mean) / self.std
         img_features = self.visual(x_norm)
         img_features = F.normalize(img_features, dim=-1)
 
-        # Cosine similarity against text prompt embedding: (B, 1)
-        similarity = img_features @ self.text_emb.T
+        # Multi-class competitive contrastive softmax (temperature tau = 0.07)
+        # Prevents broad unspecific activation across general tissue
+        logits = (img_features @ self.text_embs.T) / 0.07
+        probs = F.softmax(logits, dim=-1)
+        target_prob = probs[:, 0:1]  # (B, 1)
 
         # Expand spatially and ensure contiguous memory for MONAI Gaussian accumulation
         b, _, h, w = x.shape
-        out = similarity.view(b, 1, 1, 1).repeat(1, 1, h, w).contiguous()
+        out = target_prob.view(b, 1, 1, 1).repeat(1, 1, h, w).contiguous()
         return out
 
 
@@ -426,11 +430,19 @@ class UniversalTissueAgnosticEngine:
         else:
             img_processed = img_np
 
-        # 4. Multimodal Text Encoding
+        # 4. Multimodal Text Encoding with Competitive Contrast Anchors
         prompt_en = translate_histology_prompt(text_prompt)
-        tokens = self.tokenizer([prompt_en]).to(self.device)
-        text_features = self.model.encode_text(tokens)
-        text_features = F.normalize(text_features, dim=-1)
+        competing_prompts = [
+            prompt_en,
+            "cell nuclei round dark purple hematoxylin dense chromatin",
+            "tubular lumen empty white cavity background space",
+            "interstitial connective tissue stroma extracellular collagen fibers",
+            "clear transparent glass slide background empty field",
+        ]
+        tokens = self.tokenizer(competing_prompts).to(self.device)
+        with torch.no_grad():
+            text_features = self.model.encode_text(tokens)
+            text_features = F.normalize(text_features, dim=-1)
 
         # 5. MONAI Sliding Window Inference with Gaussian Blending
         img_tensor = torch.from_numpy(img_processed).permute(2, 0, 1).float() / 255.0
@@ -451,32 +463,93 @@ class UniversalTissueAgnosticEngine:
         heatmap = sw_out[0, 0].cpu().numpy()
         heatmap = heatmap[:h, :w]
 
-        # 6. Apply Universal Tissue Mask to Zero-out Glass Background
-        if tissue_masking:
-            heatmap[~tissue_mask] = 0.0
+        # 6. High-Resolution Optical Density & Morphological Boundary Refinement
+        prompt_lower = text_prompt.lower()
+        is_boundary_target = any(k in prompt_lower for k in [
+            "membrana", "basal", "boundary", "borde", "límite", "limite", "lamina", "perímetro"
+        ])
+        is_nuclei_target = any(k in prompt_lower for k in [
+            "núcleo", "nucleo", "nuclei", "célula", "celula", "cell"
+        ])
+        is_lumen_target = any(k in prompt_lower for k in [
+            "luz", "lumen", "cavidad", "tubular"
+        ])
 
-        # Normalize heatmap to [0, 1] within tissue
-        h_tissue = heatmap[tissue_mask] if np.any(tissue_mask) else heatmap.ravel()
-        hmin, hmax = float(h_tissue.min()), float(h_tissue.max())
-        if hmax - hmin > 1e-6:
-            heatmap_norm = np.clip((heatmap - hmin) / (hmax - hmin), 0.0, 1.0)
+        # Optical density decomposition (Beer-Lambert Law)
+        arr_f = img_processed.astype(np.float32)
+        od = -np.log10((arr_f + 1.0) / 256.0)
+        h_chan = np.clip(od[..., 0] * 0.7 + od[..., 2] * 0.3, 0.0, 5.0)  # Hematoxylin
+        e_chan = np.clip(od[..., 1], 0.0, 5.0)                            # Eosin
+
+        if is_boundary_target:
+            # Basement membranes are the exact physical interface where dense cellular epithelium
+            # transitions into connective tissue stroma (gradient of cell density x eosin)
+            h_smooth = gaussian_filter(h_chan, sigma=2.5)
+            grad_h = np.sqrt(sobel(h_smooth, axis=0)**2 + sobel(h_smooth, axis=1)**2)
+            grad_norm = grad_h / (np.percentile(grad_h, 99.5) + 1e-6)
+            grad_norm = np.clip(grad_norm, 0.0, 1.0)
+
+            e_norm = e_chan / (np.percentile(e_chan, 99.0) + 1e-6)
+            e_norm = np.clip(e_norm, 0.0, 1.0)
+
+            # Combined anatomical boundary signal modulated by CLIP semantic prior
+            boundary_signal = grad_norm * (0.3 + 0.7 * e_norm) * (0.2 + 0.8 * heatmap)
+            boundary_signal[~tissue_mask] = 0.0
+            boundary_signal = gaussian_filter(boundary_signal, sigma=1.0)
+            boundary_max = np.percentile(boundary_signal[tissue_mask], 99.5) if np.any(tissue_mask) else 1.0
+            refined_heatmap = np.clip(boundary_signal / (boundary_max + 1e-6), 0.0, 1.0)
+
+            # High-precision thresholding (targeting 4-8% coverage for fine anatomical boundaries)
+            # sensitivity 0.5 -> ~93rd percentile (~6-7% coverage)
+            pct_cut = 98.0 - (10.0 * sensitivity)
+            pct_val = np.percentile(refined_heatmap[tissue_mask], pct_cut) if np.any(tissue_mask) else 0.5
+            binary_mask = (refined_heatmap >= pct_val) & tissue_mask
+
+            # Morphological clean up
+            binary_mask = remove_small_objects(binary_mask, min_size=32)
+            heatmap_smooth = refined_heatmap
+
+        elif is_nuclei_target:
+            # Modulate with Hematoxylin peak absorption
+            h_norm = h_chan / (np.percentile(h_chan, 99.0) + 1e-6)
+            nuclei_signal = np.clip(h_norm, 0.0, 1.0) * (0.3 + 0.7 * heatmap)
+            nuclei_signal[~tissue_mask] = 0.0
+            refined_heatmap = gaussian_filter(nuclei_signal, sigma=1.0)
+            heatmap_max = np.percentile(refined_heatmap[tissue_mask], 99.0) if np.any(tissue_mask) else 1.0
+            refined_heatmap = np.clip(refined_heatmap / (heatmap_max + 1e-6), 0.0, 1.0)
+
+            threshold = 0.8 - (0.4 * sensitivity)
+            binary_mask = (refined_heatmap > threshold) & tissue_mask
+            binary_mask = remove_small_objects(binary_mask, min_size=16)
+            heatmap_smooth = refined_heatmap
+
+        elif is_lumen_target:
+            lum_signal = np.clip(1.0 - (h_chan + e_chan) / 2.0, 0.0, 1.0) * (0.3 + 0.7 * heatmap)
+            lum_signal[~tissue_mask] = 0.0
+            refined_heatmap = gaussian_filter(lum_signal, sigma=2.0)
+            threshold = 0.75 - (0.35 * sensitivity)
+            binary_mask = (refined_heatmap > threshold) & tissue_mask
+            binary_mask = remove_small_objects(binary_mask, min_size=40)
+            heatmap_smooth = refined_heatmap
+
         else:
-            heatmap_norm = np.zeros_like(heatmap)
-
-        # Smooth slightly to reduce noise
-        heatmap_smooth = gaussian_filter(heatmap_norm, sigma=3.0)
-
-        # 7. Adaptive Thresholding
-        # Sensitivity: 0.0 (strict) to 1.0 (loose). Default 0.5 -> threshold ~ 0.5
-        threshold = 1.0 - (0.3 + 0.5 * sensitivity)
-        binary_mask = (heatmap_smooth > threshold) & tissue_mask
-
-        # Morphological clean up
-        try:
-            binary_mask = closing(binary_mask, disk(2))
-            binary_mask = remove_small_objects(binary_mask, min_size=64)
-        except Exception:
-            pass
+            # General tissue compartment
+            if tissue_masking:
+                heatmap[~tissue_mask] = 0.0
+            h_tissue = heatmap[tissue_mask] if np.any(tissue_mask) else heatmap.ravel()
+            hmin, hmax = float(h_tissue.min()), float(h_tissue.max())
+            if hmax - hmin > 1e-6:
+                heatmap_norm = np.clip((heatmap - hmin) / (hmax - hmin), 0.0, 1.0)
+            else:
+                heatmap_norm = np.zeros_like(heatmap)
+            heatmap_smooth = gaussian_filter(heatmap_norm, sigma=2.5)
+            threshold = 1.0 - (0.3 + 0.5 * sensitivity)
+            binary_mask = (heatmap_smooth > threshold) & tissue_mask
+            try:
+                binary_mask = closing(binary_mask, disk(2))
+                binary_mask = remove_small_objects(binary_mask, min_size=64)
+            except Exception:
+                pass
 
         # 8. Contour & Polygon Extraction
         labeled_mask, num_regions = label(binary_mask, return_num=True)

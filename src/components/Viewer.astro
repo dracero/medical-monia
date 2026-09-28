@@ -64,6 +64,35 @@
     <span id="coords-text">X: 0, Y: 0 px | Calibración: 0.5 µm/px</span>
   </div>
 
+  <!-- Empty State / Clean Canvas Dropzone Overlay -->
+  <div id="empty-state-overlay" style="display: flex; position: absolute; inset: 0; background: var(--bg-surface); z-index: 25; align-items: center; justify-content: center; flex-direction: column; gap: 16px; padding: 24px; text-align: center;">
+    <div style="width: 64px; height: 64px; border-radius: 50%; background: rgba(139, 92, 246, 0.12); border: 1px dashed rgba(167, 139, 250, 0.4); display: flex; align-items: center; justify-content: center; color: #a78bfa;">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="17 8 12 3 7 8"></polyline>
+        <line x1="12" y1="3" x2="12" y2="15"></line>
+      </svg>
+    </div>
+    <div>
+      <div style="font-size: 1.05rem; font-weight: 700; color: #fff; margin-bottom: 6px;">
+        Lienzo Limpio &bull; Ninguna Muestra Cargada
+      </div>
+      <div style="font-size: 0.80rem; color: var(--text-muted); max-width: 440px; line-height: 1.5;">
+        Sube cualquier imagen histológica (colon, pulmón, riñón, hígado, cerebro, etc.) para iniciar la segmentación agnóstica guiada por texto.
+      </div>
+    </div>
+    <div style="display: flex; gap: 10px; margin-top: 4px;">
+      <button id="empty-upload-btn" class="btn btn-primary" style="display: flex; align-items: center; gap: 8px;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="17 8 12 3 7 8"></polyline>
+          <line x1="12" y1="3" x2="12" y2="15"></line>
+        </svg>
+        <span>Subir Imagen Histológica</span>
+      </button>
+    </div>
+  </div>
+
   <!-- Scanning / Computing overlay banner -->
   <div id="computing-overlay" style="display: none; position: absolute; inset: 0; background: rgba(7, 9, 14, 0.65); backdrop-filter: blur(4px); z-index: 40; align-items: center; justify-content: center; flex-direction: column; gap: 14px;">
     <div style="width: 48px; height: 48px; border: 3px solid rgba(6, 182, 212, 0.2); border-top-color: #06b6d4; border-radius: 50%; animation: spin-loader 0.8s linear infinite;"></div>
@@ -83,7 +112,7 @@
   import type { PromptPoint, ZeroShotAnnotation, TextPromptResult } from '../types/pathology';
 
   // State
-  let currentSampleId = 'testis_real';
+  let currentSampleId = '';
   let customImageBase64: string | null = null;
   let viewMode: 'macro' | 'micro' | 'zeroshot' | 'text-prompt' = 'macro';
   let currentTool: 'prompt-pos' | 'prompt-neg' = 'prompt-pos';
@@ -159,8 +188,8 @@
 
   // Handle Custom User Image Upload (ANY REAL TISSUE)
   const fileInput = document.getElementById('custom-image-file') as HTMLInputElement;
-  fileInput?.addEventListener('change', (e) => {
-    const file = fileInput.files?.[0];
+
+  function loadUserImageFile(file: File) {
     if (!file) return;
 
     const reader = new FileReader();
@@ -174,15 +203,28 @@
       tissueImg.src = customImageBase64;
       tissueImg.onload = () => {
         imgLoaded = true;
+
+        // Hide clean canvas dropzone overlay
+        const emptyOverlay = document.getElementById('empty-state-overlay');
+        if (emptyOverlay) emptyOverlay.style.display = 'none';
+
         resetView();
         const resEl = document.getElementById('img-res');
         if (resEl) resEl.textContent = `${tissueImg.width}x${tissueImg.height} px`;
         const titleEl = document.getElementById('tissue-title');
         if (titleEl) titleEl.textContent = file.name;
+        const organEl = document.getElementById('tissue-organ');
+        if (organEl) organEl.textContent = 'Muestra Histológica Cargada';
+
         runRealAnalysis();
       };
     };
     reader.readAsDataURL(file);
+  }
+
+  fileInput?.addEventListener('change', () => {
+    const file = fileInput.files?.[0];
+    if (file) loadUserImageFile(file);
   });
 
   async function runRealAnalysis() {
@@ -759,11 +801,29 @@
 
     renderSavedList();
 
-    // 8. Generate a new session ID for subsequent operations
+    // 8. Unload tissue image and return to clean workspace
+    imgLoaded = false;
+    tissueImg = new Image();
+    customImageBase64 = null;
+    currentSampleId = '';
+    if (fileInput) fileInput.value = '';
+
+    const emptyOverlay = document.getElementById('empty-state-overlay');
+    if (emptyOverlay) emptyOverlay.style.display = 'flex';
+
+    const titleEl = document.getElementById('tissue-title');
+    if (titleEl) titleEl.textContent = 'Sin Muestra Cargada';
+    const organEl = document.getElementById('tissue-organ');
+    if (organEl) organEl.textContent = 'Sube un corte histológico (cualquier tejido)';
+    const resEl = document.getElementById('img-res');
+    if (resEl) resEl.textContent = '---';
+
+    // 9. Generate a new session ID for subsequent operations
     const newSid = 'sess_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now();
     sessionStorage.setItem('monai_session_id', newSid);
 
-    // 9. Re-render clean canvas
+    // 10. Re-render clean canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     render();
 
     // 10. User visual feedback overlay
@@ -1087,7 +1147,31 @@
     document.getElementById('tool-prompt-pos')?.classList.remove('active-tool');
   });
 
-  // Init
+  // Empty dropzone button trigger
+  document.getElementById('empty-upload-btn')?.addEventListener('click', () => {
+    fileInput?.click();
+  });
+
+  // Drag and Drop files directly onto canvas viewport
+  const dropZone = document.getElementById('viewport-container');
+  if (dropZone) {
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.style.boxShadow = 'inset 0 0 0 2px #a78bfa';
+    });
+    dropZone.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dropZone.style.boxShadow = 'none';
+    });
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.style.boxShadow = 'none';
+      if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+        loadUserImageFile(e.dataTransfer.files[0]);
+      }
+    });
+  }
+
+  // Init clean workspace (zero hardcoded images)
   resizeCanvas();
-  loadSample('testis_real');
 </script>

@@ -7,19 +7,19 @@
   <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 14px;">
     <div class="sidebar-heading" style="margin-bottom: 8px;">
       <span>Muestra Histológica</span>
-      <span id="specimen-badge" style="font-size: 0.65rem; color: #34d399; background: rgba(16, 185, 129, 0.15); padding: 2px 6px; border-radius: 4px; font-weight: 600;">DIGITAL PATHOLOGY</span>
+      <span id="specimen-badge" style="font-size: 0.65rem; color: #38bdf8; background: rgba(56, 189, 248, 0.15); padding: 2px 6px; border-radius: 4px; font-weight: 600;">DIGITAL PATHOLOGY</span>
     </div>
     <div id="tissue-title" style="font-weight: 700; font-size: 0.90rem; color: var(--text-primary); margin-bottom: 4px;">
-      Corte Histológico
+      Sin Muestra Cargada
     </div>
-    <div id="tissue-organ" style="font-size: 0.74rem; color: var(--accent-cyan); font-weight: 500; margin-bottom: 8px;">
-      Microscopía Óptica (H&E)
+    <div id="tissue-organ" style="font-size: 0.74rem; color: var(--text-muted); font-weight: 500; margin-bottom: 8px;">
+      Sube un corte histológico (cualquier tejido)
     </div>
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 0.68rem; font-family: var(--font-mono); color: var(--text-muted); background: var(--bg-card); padding: 8px; border-radius: var(--radius-sm);">
       <div>Tinción: <span style="color: var(--text-primary);">H&E</span></div>
-      <div>Resolución: <span id="img-res" style="color: var(--text-primary);">1024x576 px</span></div>
+      <div>Resolución: <span id="img-res" style="color: var(--text-primary);">---</span></div>
       <div>Calibración: <span style="color: var(--text-primary);">0.5 µm/px</span></div>
-      <div>Modo: <span style="color: #34d399;">Agnóstico</span></div>
+      <div>Modo: <span style="color: #a78bfa;">Agnóstico</span></div>
     </div>
   </div>
 
@@ -32,7 +32,7 @@
         <span style="font-size: 0.68rem; color: var(--accent-cyan); font-family: var(--font-mono);">Unidades</span>
       </div>
       <div id="macro-metrics-list" style="display: flex; flex-direction: column; gap: 5px; font-size: 0.72rem;">
-        <div style="color: var(--text-muted);">Calculando estructuras reales...</div>
+        <div style="color: var(--text-muted); font-style: italic;">Sin muestra cargada (Lienzo limpio).</div>
       </div>
     </div>
 

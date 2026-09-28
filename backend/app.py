@@ -26,21 +26,21 @@ class PromptPoint(BaseModel):
     label: int = 1
 
 class ZeroShotRequest(BaseModel):
-    sample_id: Optional[str] = "testis_real"
+    sample_id: Optional[str] = None
     points: List[PromptPoint]
     box: Optional[List[float]] = None
     custom_image_base64: Optional[str] = None
     session_id: Optional[str] = None
 
 class UniversalAnalysisRequest(BaseModel):
-    sample_id: Optional[str] = "testis_real"
+    sample_id: Optional[str] = None
     image_base64: Optional[str] = None
     calibration_um_per_px: float = 0.5
     session_id: Optional[str] = None
 
 class TextPromptRequest(BaseModel):
     text_prompt: str
-    sample_id: Optional[str] = "testis_real"
+    sample_id: Optional[str] = None
     image_base64: Optional[str] = None
     sensitivity: float = 0.5
     calibration_um_per_px: float = 0.5
@@ -49,18 +49,7 @@ class TextPromptRequest(BaseModel):
     overlap: float = 0.5
     session_id: Optional[str] = None
 
-SAMPLES_METADATA = {
-    "testis_real": {
-        "id": "testis_real",
-        "title": "Testículo Humano: Túbulos Seminíferos y Espermatogénesis (Microscopía Real)",
-        "organ": "Testículo / Parénquima Testicular",
-        "stain": "Hematoxilina & Eosina (H&E)",
-        "magnification": "20x / 124x WSI crop",
-        "resolution": "1024x576 px",
-        "file": "/samples/testis_real.jpg",
-        "description": "Corte histológico real con túbulos seminíferos, epitelio germinal estratificado, luces intraluminales y racimos de células de Leydig en el estroma peritubular."
-    }
-}
+SAMPLES_METADATA = {}
 
 @app.get("/health")
 def health_check():
@@ -99,14 +88,12 @@ def infer_universal_analysis(req: UniversalAnalysisRequest):
     """
     if req.image_base64:
         img_source = req.image_base64
-        sample_title = "Imagen Subida por el Usuario"
+        sample_title = "Muestra Histológica Subida"
+    elif req.sample_id and os.path.exists(f"public/samples/{req.sample_id}.jpg"):
+        img_source = f"public/samples/{req.sample_id}.jpg"
+        sample_title = SAMPLES_METADATA.get(req.sample_id, {}).get("title", "Corte Histológico")
     else:
-        sample_id = req.sample_id or "testis_real"
-        sample_path = f"public/samples/{sample_id}.jpg"
-        if not os.path.exists(sample_path):
-            sample_path = "public/samples/testis_real.jpg"
-        img_source = sample_path
-        sample_title = SAMPLES_METADATA.get(sample_id, {}).get("title", sample_id)
+        raise HTTPException(status_code=400, detail="No hay ninguna muestra cargada. Sube una imagen histológica para analizar.")
 
     try:
         result = pathology_engine.analyze(img_source, calibration_um_per_px=req.calibration_um_per_px)
@@ -125,12 +112,10 @@ def infer_zero_shot(req: ZeroShotRequest):
     """
     if req.custom_image_base64:
         img_source = req.custom_image_base64
+    elif req.sample_id and os.path.exists(f"public/samples/{req.sample_id}.jpg"):
+        img_source = f"public/samples/{req.sample_id}.jpg"
     else:
-        sample_id = req.sample_id or "testis_real"
-        sample_path = f"public/samples/{sample_id}.jpg"
-        if not os.path.exists(sample_path):
-            sample_path = "public/samples/testis_real.jpg"
-        img_source = sample_path
+        raise HTTPException(status_code=400, detail="No hay ninguna muestra cargada. Sube una imagen histológica.")
 
     try:
         points_data = [p.model_dump() for p in req.points]
@@ -187,12 +172,10 @@ def infer_text_prompt_segment(req: TextPromptRequest):
         sdata["custom_image_cache"] = req.image_base64
     elif sdata.get("custom_image_cache"):
         img_source = sdata["custom_image_cache"]
+    elif req.sample_id and os.path.exists(f"public/samples/{req.sample_id}.jpg"):
+        img_source = f"public/samples/{req.sample_id}.jpg"
     else:
-        sample_id = req.sample_id or "testis_real"
-        sample_path = f"public/samples/{sample_id}.jpg"
-        if not os.path.exists(sample_path):
-            sample_path = "public/samples/testis_real.jpg"
-        img_source = sample_path
+        raise HTTPException(status_code=400, detail="No hay ninguna muestra cargada en la sesión. Sube una imagen histológica para segmentar.")
 
     try:
         result = tissue_agnostic_engine.segment(
