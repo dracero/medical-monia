@@ -136,7 +136,7 @@ class PathologyEngine:
                 poly_simple = approximate_polygon(poly, tolerance=2.5)
                 macro_units.append({
                     "id": f"unit_{i+1}",
-                    "name": f"Túbulo Seminífero #{i+1}",
+                    "name": f"Unidad Tisular #{i+1}",
                     "center": [x, y],
                     "area_um2": round(p.area * (calibration_um_per_px ** 2), 1),
                     "circularity": round(4 * np.pi * p.area / (p.perimeter ** 2), 2) if p.perimeter > 0 else 0.85,
@@ -159,11 +159,11 @@ class PathologyEngine:
 
         # Generate a Real Semantic Mask Image (RGBA PNG)
         semantic_rgba = np.zeros((h, w, 4), dtype=np.uint8)
-        # Class 1: Epithelium (Cyan, alpha 90)
+        # Class 1: Epithelium / Parenchyma (Cyan, alpha 90)
         semantic_rgba[tissue_mask] = [6, 182, 212, 90]
-        # Class 2: Interstitium / Leydig (Emerald, alpha 120)
+        # Class 2: Stroma / Interstitium (Emerald, alpha 120)
         semantic_rgba[interstitial_mask] = [16, 185, 129, 120]
-        # Class 3: Lumens (Amber, alpha 140)
+        # Class 3: Lumens / Cavities (Amber, alpha 140)
         for p in props_lumen:
             semantic_rgba[labeled_lumen == p.label] = [245, 158, 11, 140]
         # Class 4: Nuclei (Purple/Violet, alpha 210)
@@ -177,9 +177,9 @@ class PathologyEngine:
 
         classes = [
             {"id": "nuclei", "name": "Núcleos Celulares (Hematoxilina)", "color": "#8B5CF6", "percentage": pct_nuclei, "cellularity": f"{real_nuclei_count} células individuales", "area_mm2": round(nuclei_px * (calibration_um_per_px**2) / 1e6, 3)},
-            {"id": "epithelium", "name": "Epitelio Germinativo (Espermatogénesis)", "color": "#06B6D4", "percentage": pct_epithelium, "cellularity": "Capas concéntricas de maduración", "area_mm2": round(epithelium_px * (calibration_um_per_px**2) / 1e6, 3)},
-            {"id": "interstitium", "name": "Espacio Intersticial & Leydig", "color": "#10B981", "percentage": pct_interstitium, "cellularity": "Células endocrinas y capilares", "area_mm2": round(interstitial_px * (calibration_um_per_px**2) / 1e6, 3)},
-            {"id": "lumens", "name": "Luces Tubulares (Lumen)", "color": "#F59E0B", "percentage": pct_lumen, "cellularity": "Cavidad intraluminal libre", "area_mm2": round(lumen_px * (calibration_um_per_px**2) / 1e6, 3)}
+            {"id": "epithelium", "name": "Epitelio / Parénquima Funcional", "color": "#06B6D4", "percentage": pct_epithelium, "cellularity": "Compartimento celular parenquimatoso", "area_mm2": round(epithelium_px * (calibration_um_per_px**2) / 1e6, 3)},
+            {"id": "interstitium", "name": "Estroma / Matriz Conectiva Intersticial", "color": "#10B981", "percentage": pct_interstitium, "cellularity": "Matriz extracelular y soporte vascular", "area_mm2": round(interstitial_px * (calibration_um_per_px**2) / 1e6, 3)},
+            {"id": "lumens", "name": "Luces y Cavidades (Lumen)", "color": "#F59E0B", "percentage": pct_lumen, "cellularity": "Cavidad intraluminal libre", "area_mm2": round(lumen_px * (calibration_um_per_px**2) / 1e6, 3)}
         ]
 
         return {
@@ -191,11 +191,11 @@ class PathologyEngine:
                 "total_units_count": len(macro_units),
                 "total_lumens_count": len(macro_lumens),
                 "metrics": {
-                    "unidades_detectadas": f"{len(macro_units)} túbulos / unidades",
+                    "unidades_detectadas": f"{len(macro_units)} unidades morfofuncionales",
                     "luces_detectadas": f"{len(macro_lumens)} cavidades luminales",
                     "area_tisular_total": f"{total_tissue_area_mm2:.2f} mm²",
                     "volumen_parenquima": f"{pct_epithelium + pct_nuclei:.1f}%",
-                    "volumen_intersticio": f"{pct_interstitium:.1f}%"
+                    "volumen_estroma": f"{pct_interstitium:.1f}%"
                 }
             },
             "microstructure": {
